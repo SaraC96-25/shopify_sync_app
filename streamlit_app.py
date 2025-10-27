@@ -34,7 +34,7 @@ if not (SHOPIFY_STORE and SHOPIFY_API_VERSION and SHOPIFY_ADMIN_TOKEN):
 BASE_URL = f"https://{SHOPIFY_STORE}/admin/api/{SHOPIFY_API_VERSION}"
 HEADERS = {
     "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
 }
 
 # -----------------------------
@@ -47,7 +47,7 @@ uploaded_excel = st.file_uploader("Scegli il file Excel con foglio 'Dati'", type
 st.subheader("2) Carica il Listino Prezzi (Quantità×Posizione)")
 price_file = st.file_uploader("Scegli il file prezzi (può essere il secondo foglio nello stesso Excel o un CSV separato)", type=["xlsx", "xls", "csv"], key="pricefile")
 
-st.markdown("**Formato atteso per il foglio 'Dati':** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).\n\n**Formato atteso per il listino prezzi:** colonne → `Posizione Stampa`, `Quantità`, `Prezzo`. ")
+st.markdown("**Formato atteso per il foglio 'Dati':** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).\n\n**Formato atteso per il listino prezzi:** colonne → `Posizione Stampa`, `Quantità`, `Prezzo`.")
 
 ALLOWED_QT = [1,2,3,4,5,6,7,8,9,10,15,20,50,100]
 DEFAULT_POS = ["Lato Cuore","Fronte","Retro","Lato Cuore + Retro","Fronte + Retro"]
@@ -130,7 +130,8 @@ def shopify_create_or_update_product(title: str, body_html: str, options: List[s
         "product": {
             "title": title,
             "body_html": body_html,
-            "options": [{"name": o} for o in options]
+            "product_type": product_type,
+            "options": [{"name": o} for o in options],
         }
     }
 
@@ -200,7 +201,7 @@ def build_variants_for_product(df_prod: pd.DataFrame, price_lookup: Dict[Tuple[s
             "sku": sku,
             "inventory_management": "shopify",
             "inventory_quantity": 9999,
-            "taxable": True
+            "taxable": True,
         })
     return variants
 
@@ -272,14 +273,14 @@ if st.button("🔁 Crea/aggiorna prodotti su Shopify", type="primary"):
 
             # pubblicazione
             if publish:
-                # Pubblica sul canale Online Store (se serve). API moderne usano 'publication' e 'channels'; per semplicità lasciamo lo stato di default.
+                # Pubblica sul canale Online Store (se necessario). API moderne usano 'publication'/'channels'; qui lasciamo lo stato di default.
                 pass
 
             st.success(f"Create {len(created_variants)} varianti per '{title}'.")
             created_summary.append({
                 "Titolo": title,
                 "SKU Base": sku,
-                "# Varianti": len(created_variants)
+                "# Varianti": len(created_variants),
             })
             time.sleep(0.4)
 
@@ -289,14 +290,15 @@ if st.button("🔁 Crea/aggiorna prodotti su Shopify", type="primary"):
 
 st.divider()
 
-st.markdown("""
+st.markdown(
+    """
 ### 📘 Note operative
 - **Due opzioni**: l'app crea le opzioni **Quantità** e **Posizione Stampa** (non due varianti fisse). Le varianti generate sono solo le combinazioni presenti nel foglio **Dati** e con prezzo presente a listino.
 - **Prezzi**: il prezzo viene preso dalla tabella `Posizione Stampa × Quantità`. Se una combinazione non ha prezzo, la variante viene **saltata** e segnalata.
 - **SKU variante**: viene generato come `SKUBASE-<Qta>-<pos>`, max 63 caratteri.
-- **Inventario**: impostato a 9999 per semplicità. Adatta a logica reale (magazzino/track inventory) se necessario.
-- **Pubblicazione**: questo esempio non forza la pubblicazione su canali specifici; se il tema è attivo l'articolo risulta visibile una volta completato.
-- **Deduplicazione prodotti**: la ricerca prodotto avviene per *titolo esatto*. In produzione conviene usare un `handle` o un ID salvato.
+- **Inventario**: impostato a 9999 per semplicità. Adatta la logica reale se necessario.
+- **Pubblicazione**: questo esempio non forza la pubblicazione su canali specifici.
+- **Deduplicazione prodotti**: la ricerca prodotto avviene per *titolo esatto*. In produzione conviene usare un `handle` o ID.
 
 ### 🔑 Secrets da impostare su Streamlit Cloud
 ```toml
@@ -322,4 +324,5 @@ Fronte + Retro,1,18.90
 - Gestione immagini per varianti.
 - Canali di pubblicazione / status prodotto.
 - Sincronizzazione parziale: aggiungere solo varianti mancanti invece di sostituirle.
-"""}
+    """
+)
