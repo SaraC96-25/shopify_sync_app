@@ -47,7 +47,9 @@ uploaded_excel = st.file_uploader("Scegli il file Excel con foglio 'Dati'", type
 st.subheader("2) Carica il Listino Prezzi (Quantità×Posizione)")
 price_file = st.file_uploader("Scegli il file prezzi (può essere il secondo foglio nello stesso Excel o un CSV separato)", type=["xlsx", "xls", "csv"], key="pricefile")
 
-st.markdown("**Formato atteso per il foglio 'Dati':** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).\n\n**Formato atteso per il listino prezzi:** colonne → `Posizione Stampa`, `Quantità`, `Prezzo`.")
+st.markdown("**Formato atteso per il foglio 'Dati':** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).
+
+**Formato atteso per il listino prezzi:** colonne → `Posizione Stampa`, `Quantità`, `Prezzo`.")
 
 ALLOWED_QT = [1,2,3,4,5,6,7,8,9,10,15,20,50,100]
 DEFAULT_POS = ["Lato Cuore","Fronte","Retro","Lato Cuore + Retro","Fronte + Retro"]
@@ -213,26 +215,29 @@ products_df = None
 prices_df = None
 price_lookup = None
 
-col1, col2 = st.columns(2)
+if uploaded_excel:
+    try:
+        products_df = read_products_df(uploaded_excel)
+        st.success("File 'Dati' letto correttamente.")
+        st.dataframe(products_df.head(20))
 
-with col1:
-    if uploaded_excel:
-        try:
-            products_df = read_products_df(uploaded_excel)
-            st.success("File prodotti letto correttamente.")
-            st.dataframe(products_df.head(20))
-        except Exception as e:
-            st.error(f"Errore nel leggere l'Excel prodotti: {e}")
+        # 1) prova a trovare un foglio prezzi nello stesso file
+        prices_df = read_prices_from_excel(uploaded_excel)
 
-with col2:
-    if price_file:
-        try:
-            prices_df = read_prices(price_file)
-            st.success("Listino prezzi caricato.")
+        # 2) se non trovato, prova a vedere se in Dati c'è già una colonna prezzo
+        if prices_df is None and "prezzo" in products_df.columns:
+            tmp = products_df[["posizione stampa", "quantità", "prezzo"]].copy()
+            prices_df = tmp.dropna(subset=["prezzo"]).copy()
+
+        if prices_df is not None:
+            st.success("Listino prezzi rilevato nello stesso file.")
             st.dataframe(prices_df.head(20))
             price_lookup = build_price_lookup(prices_df)
-        except Exception as e:
-            st.error(f"Errore nel leggere il listino prezzi: {e}")
+        else:
+            st.warning("Non ho trovato un foglio prezzi. Aggiungi un foglio 'Prezzi' o 'Listino' nello stesso file, oppure inserisci la colonna 'Prezzo' nel foglio Dati.")
+
+    except Exception as e:
+        st.error(f"Errore nel leggere l'Excel: {e}")
 
 st.divider()
 
