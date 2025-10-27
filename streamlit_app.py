@@ -40,24 +40,27 @@ HEADERS = {
 # -----------------------------
 # 📄 Caricamento file
 # -----------------------------
-st.subheader("1) Carica l'Excel prodotti (foglio: Dati)")
-uploaded_excel = st.file_uploader("Scegli il file Excel con foglio 'Dati'", type=["xlsx", "xls"]) 
+st.subheader("Carica il file Excel unico (Prodotti + Prezzi)")
+uploaded_excel = st.file_uploader(
+    "Scegli l'Excel che contiene: foglio `Dati` e (opzionale) foglio `Prezzi` o `Listino`",
+    type=["xlsx", "xls"]
+)
 
-# Per i prezzi accettiamo o un secondo foglio nello stesso Excel chiamato "Prezzi" oppure un file separato (CSV/Excel)
-st.subheader("2) Carica il Listino Prezzi (Quantità×Posizione)")
-price_file = st.file_uploader("Scegli il file prezzi (può essere il secondo foglio nello stesso Excel o un CSV separato)", type=["xlsx", "xls", "csv"], key="pricefile")
+st.markdown(
+    "**Foglio `Dati` (obbligatorio):** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).  "
+)
+st.markdown(
+    "**Foglio `Prezzi` o `Listino` (opzionale nello stesso file):**\n"
+    "- formato **tidy**: colonne → `Posizione Stampa`, `Quantità`, `Prezzo`, **oppure**\n"
+    "- formato **matrice**: prima colonna = `Posizione Stampa`, colonne successive = quantità (1,2,3,...), celle = prezzo."
+)
 
-st.markdown("**Formato atteso per il foglio 'Dati':** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).
-
-**Formato atteso per il listino prezzi:** colonne → `Posizione Stampa`, `Quantità`, `Prezzo`.")
-
-ALLOWED_QT = [1,2,3,4,5,6,7,8,9,10,15,20,50,100]
-DEFAULT_POS = ["Lato Cuore","Fronte","Retro","Lato Cuore + Retro","Fronte + Retro"]
+ALLOWED_QT = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100]
+DEFAULT_POS = ["Lato Cuore", "Fronte", "Retro", "Lato Cuore + Retro", "Fronte + Retro"]
 
 # -----------------------------
 # 🧠 Funzioni dati
 # -----------------------------
-
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     mapper = {c: c.strip().lower() for c in df.columns}
     df = df.rename(columns=mapper)
@@ -67,62 +70,81 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 def read_products_df(file) -> pd.DataFrame:
     xls = pd.ExcelFile(file)
     if "Dati" not in xls.sheet_names:
-        raise ValueError("Nel file prodotti deve essere presente un foglio 'Dati'.")
+        raise ValueError("Nel file deve essere presente un foglio 'Dati'.")
     df = xls.parse("Dati")
     df = normalize_columns(df)
     expected = {"titolo prodotto", "sku", "posizione stampa", "quantità"}
     missing = expected - set(df.columns)
     if missing:
         raise ValueError(f"Mancano colonne nel foglio Dati: {missing}")
-    # cast
     df["quantità"] = pd.to_numeric(df["quantità"], errors="coerce").astype("Int64")
-    # filtra quantità permesse
     df = df[df["quantità"].isin(ALLOWED_QT)].copy()
-    # pulizia posizioni
     df["posizione stampa"] = df["posizione stampa"].str.strip()
     return df
 
 
-def read_prices(file_or_excel) -> pd.DataFrame:
-    if file_or_excel is None:
-        raise ValueError("Carica un listino prezzi.")
-    name = getattr(file_or_excel, 'name', '')
-    if name.endswith(".csv"):
-        dfp = pd.read_csv(file_or_excel)
-    else:
-        xls = pd.ExcelFile(file_or_excel)
-        # se esiste foglio Prezzi, usa quello; altrimenti prova il primo
-        sheet = "Prezzi" if "Prezzi" in xls.sheet_names else xls.sheet_names[0]
-        dfp = xls.parse(sheet)
-    dfp = normalize_columns(dfp)
-    expected = {"posizione stampa", "quantità", "prezzo"}
-    missing = expected - set(dfp.columns)
-    if missing:
-        raise ValueError(f"Nel listino prezzi mancano colonne: {missing}")
-    dfp["quantità"] = pd.to_numeric(dfp["quantità"], errors="coerce").astype("Int64")
-    dfp["prezzo"] = pd.to_numeric(dfp["prezzo"], errors="coerce")
-    dfp = dfp.dropna(subset=["quantità","prezzo"]).copy()
-    dfp["posizione stampa"] = dfp["posizione stampa"].str.strip()
-    return dfp
+def read_prices_from_excel(file) -> pd.DataFrame:
+    """Cerca un foglio prezzi nello stesso Excel.
+    Supporta:
+      1) formato tidy: colonne [Posizione Stampa, Quantità, Prezzo]
+      2) formato matrice: prima colonna Posizione Stampa, colonne successive = quantità
+    """
+    xls = pd.ExcelFile(file)
+    candidate_names = ["Prezzi", "Listino", "prezzi", "listino", "Prices", "prices"]
+    sheet = None
+    for name in candidate_names:
+        if name in xls.sheet_names:
+            sheet = name
+            break
+    if sheet is None:
+        for s in xls.sheet_names:
+            if s == "Dati":
+                continue
+            tmp = normalize_columns(xls.parse(s))
+            cols = set(tmp.columns)
+            if "posizione stampa" in cols:
+                qty_like = [c for c in tmp.columns if c.isdigit() and int(c) in ALLOWED_QT]
+                tidy_like = {"posizione stampa", "quantità", "prezzo"}.issubset(cols)
+                if qty_like or tidy_like:
+                    sheet = s
+                    break
+    if sheet is None:
+        return None
+
+    dfp = normalize_columns(xls.parse(sheet))
+
+    if {"posizione stampa", "quantità", "prezzo"}.issubset(set(dfp.columns)):
+        dfp["quantità"] = pd.to_numeric(dfp["quantità"], errors="coerce").astype("Int64")
+        dfp["prezzo"] = pd.to_numeric(dfp["prezzo"], errors="coerce")
+        dfp = dfp.dropna(subset=["quantità", "prezzo"]).copy()
+        dfp["posizione stampa"] = dfp["posizione stampa"].str.strip()
+        return dfp
+
+    if "posizione stampa" in dfp.columns:
+        qty_cols = [c for c in dfp.columns if c != "posizione stampa" and (str(c).isdigit() and int(c) in ALLOWED_QT)]
+        if qty_cols:
+            melted = dfp.melt(id_vars=["posizione stampa"], value_vars=qty_cols, var_name="quantità", value_name="prezzo")
+            melted["quantità"] = pd.to_numeric(melted["quantità"], errors="coerce").astype("Int64")
+            melted["prezzo"] = pd.to_numeric(melted["prezzo"], errors="coerce")
+            melted = melted.dropna(subset=["prezzo"]).copy()
+            melted["posizione stampa"] = melted["posizione stampa"].str.strip()
+            return melted
+
+    return None
 
 
 def build_price_lookup(prices_df: pd.DataFrame) -> Dict[Tuple[str, int], float]:
     lookup = {}
     for _, r in prices_df.iterrows():
         key = (str(r["posizione stampa"]).strip(), int(r["quantità"]))
-        lookup[key] = float(r["prezzo"])  # prezzo finale Shopify
+        lookup[key] = float(r["prezzo"])
     return lookup
 
 
 # -----------------------------
 # 🧱 Shopify REST helpers
 # -----------------------------
-
 def shopify_create_or_update_product(title: str, body_html: str, options: List[str], product_type: str = "") -> dict:
-    """Crea il prodotto se non esiste, altrimenti aggiorna solo le opzioni.
-    Strategia semplice: cerchiamo per title esatto. In contesti reali conviene usare un handle fisso o l'ID.
-    """
-    # Cerca prodotti con titolo
     q_params = {"title": title}
     r = requests.get(f"{BASE_URL}/products.json", headers=HEADERS, params=q_params, timeout=30)
     r.raise_for_status()
@@ -149,19 +171,13 @@ def shopify_create_or_update_product(title: str, body_html: str, options: List[s
 
 
 def shopify_replace_variants(product_id: int, variants: List[dict]) -> List[dict]:
-    """Elimina varianti esistenti e inserisce le nuove in blocco."""
-    # 1) Leggi varianti attuali
     r = requests.get(f"{BASE_URL}/products/{product_id}/variants.json", headers=HEADERS, timeout=30)
     r.raise_for_status()
     current = r.json().get("variants", [])
-    # 2) Cancella varianti esistenti
     for v in current:
         vid = v["id"]
         dr = requests.delete(f"{BASE_URL}/variants/{vid}.json", headers=HEADERS, timeout=30)
-        if dr.status_code not in (200, 201, 204):
-            st.warning(f"Impossibile cancellare variante {vid}: {dr.status_code}")
         time.sleep(0.2)
-    # 3) Crea nuove
     created = []
     for v in variants:
         cr = requests.post(f"{BASE_URL}/variants.json", headers=HEADERS, data=json.dumps({"variant": v}), timeout=30)
@@ -174,18 +190,22 @@ def shopify_replace_variants(product_id: int, variants: List[dict]) -> List[dict
 # -----------------------------
 # 🔧 Costruzione varianti
 # -----------------------------
-
 def make_variant_sku(base_sku: str, qty: int, pos: str) -> str:
     pos_slug = (
         pos.lower()
         .replace(" ", "-")
         .replace("+", "plus")
-        .replace("à", "a").replace("è","e").replace("é","e").replace("ì","i").replace("ò","o").replace("ù","u")
+        .replace("à", "a")
+        .replace("è", "e")
+        .replace("é", "e")
+        .replace("ì", "i")
+        .replace("ò", "o")
+        .replace("ù", "u")
     )
     return f"{base_sku}-{qty}-{pos_slug}"[:63]
 
 
-def build_variants_for_product(df_prod: pd.DataFrame, price_lookup: Dict[Tuple[str,int], float], default_currency: str = "EUR") -> List[dict]:
+def build_variants_for_product(df_prod: pd.DataFrame, price_lookup: Dict[Tuple[str, int], float]) -> List[dict]:
     variants = []
     for _, row in df_prod.iterrows():
         qty = int(row["quantità"])
@@ -196,21 +216,23 @@ def build_variants_for_product(df_prod: pd.DataFrame, price_lookup: Dict[Tuple[s
             st.warning(f"Prezzo mancante per combinazione: {pos} × {qty}. Variante saltata.")
             continue
         sku = make_variant_sku(row["sku"], qty, pos)
-        variants.append({
-            "option1": qty,                  # Quantità
-            "option2": pos,                  # Posizione Stampa
-            "price": f"{price:.2f}",
-            "sku": sku,
-            "inventory_management": "shopify",
-            "inventory_quantity": 9999,
-            "taxable": True,
-        })
+        variants.append(
+            {
+                "option1": qty,
+                "option2": pos,
+                "price": f"{price:.2f}",
+                "sku": sku,
+                "inventory_management": "shopify",
+                "inventory_quantity": 9999,
+                "taxable": True,
+            }
+        )
     return variants
+
 
 # -----------------------------
 # 🚀 UI principale
 # -----------------------------
-
 products_df = None
 prices_df = None
 price_lookup = None
@@ -221,10 +243,7 @@ if uploaded_excel:
         st.success("File 'Dati' letto correttamente.")
         st.dataframe(products_df.head(20))
 
-        # 1) prova a trovare un foglio prezzi nello stesso file
         prices_df = read_prices_from_excel(uploaded_excel)
-
-        # 2) se non trovato, prova a vedere se in Dati c'è già una colonna prezzo
         if prices_df is None and "prezzo" in products_df.columns:
             tmp = products_df[["posizione stampa", "quantità", "prezzo"]].copy()
             prices_df = tmp.dropna(subset=["prezzo"]).copy()
@@ -234,7 +253,7 @@ if uploaded_excel:
             st.dataframe(prices_df.head(20))
             price_lookup = build_price_lookup(prices_df)
         else:
-            st.warning("Non ho trovato un foglio prezzi. Aggiungi un foglio 'Prezzi' o 'Listino' nello stesso file, oppure inserisci la colonna 'Prezzo' nel foglio Dati.")
+            st.warning("Non ho trovato un foglio prezzi. Aggiungi un foglio 'Prezzi' o inserisci la colonna 'Prezzo' nel foglio Dati.")
 
     except Exception as e:
         st.error(f"Errore nel leggere l'Excel: {e}")
@@ -250,14 +269,12 @@ st.info("Per ogni 'Titolo Prodotto' verranno create 2 opzioni: Quantità e Posiz
 
 if st.button("🔁 Crea/aggiorna prodotti su Shopify", type="primary"):
     if products_df is None or price_lookup is None:
-        st.error("Carica sia il file prodotti (Dati) che il listino prezzi prima di procedere.")
+        st.error("Carica il file Excel con Dati e Prezzi prima di procedere.")
     elif not (SHOPIFY_STORE and SHOPIFY_ADMIN_TOKEN):
         st.error("Credenziali Shopify non configurate.")
     else:
-        # ciclo per prodotto
         created_summary = []
         for (title, sku), df_grp in products_df.groupby(["titolo prodotto", "sku"], dropna=False):
-            st.write("")
             st.write(f"▶️ **{title}** — SKU base: `{sku}`")
 
             product = shopify_create_or_update_product(
@@ -267,26 +284,17 @@ if st.button("🔁 Crea/aggiorna prodotti su Shopify", type="primary"):
                 product_type=product_type,
             )
             prod_id = product["id"]
-            st.write(f"ID prodotto Shopify: {prod_id}")
-
             variants = build_variants_for_product(df_grp, price_lookup)
             if not variants:
                 st.warning("Nessuna variante costruita (forse mancano prezzi).")
                 continue
 
             created_variants = shopify_replace_variants(prod_id, variants)
-
-            # pubblicazione
             if publish:
-                # Pubblica sul canale Online Store (se necessario). API moderne usano 'publication'/'channels'; qui lasciamo lo stato di default.
                 pass
 
             st.success(f"Create {len(created_variants)} varianti per '{title}'.")
-            created_summary.append({
-                "Titolo": title,
-                "SKU Base": sku,
-                "# Varianti": len(created_variants),
-            })
+            created_summary.append({"Titolo": title, "SKU Base": sku, "# Varianti": len(created_variants)})
             time.sleep(0.4)
 
         if created_summary:
@@ -298,36 +306,14 @@ st.divider()
 st.markdown(
     """
 ### 📘 Note operative
-- **Due opzioni**: l'app crea le opzioni **Quantità** e **Posizione Stampa** (non due varianti fisse). Le varianti generate sono solo le combinazioni presenti nel foglio **Dati** e con prezzo presente a listino.
-- **Prezzi**: il prezzo viene preso dalla tabella `Posizione Stampa × Quantità`. Se una combinazione non ha prezzo, la variante viene **saltata** e segnalata.
-- **SKU variante**: viene generato come `SKUBASE-<Qta>-<pos>`, max 63 caratteri.
-- **Inventario**: impostato a 9999 per semplicità. Adatta la logica reale se necessario.
-- **Pubblicazione**: questo esempio non forza la pubblicazione su canali specifici.
-- **Deduplicazione prodotti**: la ricerca prodotto avviene per *titolo esatto*. In produzione conviene usare un `handle` o ID.
+- **Un solo file Excel**: foglio `Dati` obbligatorio, foglio `Prezzi`/`Listino` facoltativo.
+- **Prezzi**: se manca il foglio prezzi, ma il foglio `Dati` ha la colonna `Prezzo`, verrà usata quella.
+- **SKU variante**: generato come `SKUBASE-<Qta>-<pos>`.
+- **Inventario**: impostato a 9999 per semplicità.
+- **Deduplicazione**: ricerca prodotto per titolo esatto.
 
-### 🔑 Secrets da impostare su Streamlit Cloud
+### 🔑 Secrets da impostare
 ```toml
-# .streamlit/secrets.toml
 SHOPIFY_STORE = "mystore.myshopify.com"
 SHOPIFY_API_VERSION = "2024-04"
 SHOPIFY_ADMIN_TOKEN = "shpat_..."
-```
-
-### 🧪 Struttura file prezzi (esempio)
-```
-Posizione Stampa,Quantità,Prezzo
-Fronte,1,12.90
-Fronte,2,20.00
-Retro,1,12.90
-Lato Cuore,1,10.90
-Fronte + Retro,1,18.90
-...
-```
-
-### 🚩 Limiti & miglioramenti futuri
-- Ricerca per SKU (via InventoryItem) per associare a prodotti già esistenti.
-- Gestione immagini per varianti.
-- Canali di pubblicazione / status prodotto.
-- Sincronizzazione parziale: aggiungere solo varianti mancanti invece di sostituirle.
-    """
-)
