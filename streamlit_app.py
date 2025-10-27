@@ -9,6 +9,12 @@ import requests
 import streamlit as st
 
 # -----------------------------
+# 🔢 Costanti globali
+# -----------------------------
+ALLOWED_QT = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100]
+DEFAULT_POS = ["Lato Cuore", "Fronte", "Retro", "Lato Cuore + Retro", "Fronte + Retro"]
+
+# -----------------------------
 # ⚙️ Config & helpers
 # -----------------------------
 st.set_page_config(page_title="Shopify Variant Uploader", page_icon="🛍️", layout="wide")
