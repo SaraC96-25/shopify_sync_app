@@ -47,22 +47,18 @@ HEADERS = {
 # 📄 Caricamento file
 # -----------------------------
 st.subheader("Carica il file Excel unico (Prodotti + Prezzi)")
-uploaded_excel = st.file_uploader(
-    "Scegli l'Excel che contiene: foglio `Dati` e (opzionale) foglio `Prezzi` o `Listino`",
-    type=["xlsx", "xls"]
-)
+uploaded_excel = st.file_uploader("Scegli l'Excel che contiene: foglio `Dati` e (opzionale) foglio `Prezzi`/`Listino`", type=["xlsx", "xls"]) 
 
-st.markdown(
-    """
-**Foglio `Dati` (obbligatorio):**
-- colonne richieste → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità`
-- il campo `Costo Fornitore` viene ignorato
+st.markdown("**Foglio `Dati` (obbligatorio):** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).  ")
+st.markdown("**Foglio `Prezzi`/`Listino` (opzionale nello stesso file):**
+- formato **tidy**: colonne → `Posizione Stampa`, `Quantità`, `Prezzo`, **oppure**
+- formato **matrice**: prima colonna = `Posizione Stampa`, colonne successive = quantità (1,2,3,...), celle = prezzo.").
 
-**Foglio `Prezzi` o `Listino` (opzionale nello stesso file):**
-- formato **tidy** → colonne: `Posizione Stampa`, `Quantità`, `Prezzo`
-- formato **matrice** → prima colonna = `Posizione Stampa`, colonne successive = quantità (1, 2, 3, ...), celle = prezzo
-"""
-)
+**Formato atteso per il listino prezzi:** colonne → `Posizione Stampa`, `Quantità`, `Prezzo`.")
+
+ALLOWED_QT = [1,2,3,4,5,6,7,8,9,10,15,20,50,100]
+DEFAULT_POS = ["Lato Cuore","Fronte","Retro","Lato Cuore + Retro","Fronte + Retro"]
+
 # -----------------------------
 # 🧠 Funzioni dati
 # -----------------------------
@@ -189,7 +185,8 @@ def _shopify_request(method: str, path: str, **kwargs) -> requests.Response:
                 body = r.json()
             except Exception:
                 body = r.text
-            st.error(f"Errore Shopify {r.status_code} su {path}:\n{body}")
+            st.error(f"Errore Shopify {r.status_code} su {path}:
+{body}")
         r.raise_for_status()
         return r
     except requests.RequestException as e:
@@ -201,7 +198,8 @@ def _shopify_request(method: str, path: str, **kwargs) -> requests.Response:
                 body = resp.json()
             except Exception:
                 body = resp.text
-        st.error(f"Richiesta Shopify fallita: {e}\nDettagli: {body}")
+        st.error(f"Richiesta Shopify fallita: {e}
+Dettagli: {body}")
         raise
 
 
@@ -254,9 +252,15 @@ def shopify_create_or_update_product(title: str, body_html: str, options: List[s
 
 
 def shopify_replace_variants(product_id: int, variants: List[dict]) -> List[dict]:
+    """Sostituisce tutte le varianti del prodotto in modo sicuro.
+    - Cancella le varianti esistenti
+    - Crea le nuove **usando l'endpoint corretto** per il prodotto:
+      POST /products/{product_id}/variants.json
+    """
     # 1) Leggi varianti attuali
     r = _shopify_request("GET", f"/products/{product_id}/variants.json")
     current = r.json().get("variants", [])
+
     # 2) Cancella varianti esistenti
     for v in current:
         vid = v["id"]
@@ -265,10 +269,12 @@ def shopify_replace_variants(product_id: int, variants: List[dict]) -> List[dict
         except Exception:
             st.warning(f"Impossibile cancellare variante {vid}")
         time.sleep(0.2)
-    # 3) Crea nuove
+
+    # 3) Crea nuove (endpoint specifico del prodotto)
     created = []
     for v in variants:
-        cr = _shopify_request("POST", f"/variants.json", data=json.dumps({"variant": v}))
+        v_with_pid = {**v, "product_id": product_id}
+        cr = _shopify_request("POST", f"/products/{product_id}/variants.json", data=json.dumps({"variant": v_with_pid}))
         created.append(cr.json()["variant"])
         time.sleep(0.2)
     return created
@@ -397,3 +403,39 @@ if st.button("🔁 Crea/aggiorna prodotti su Shopify", type="primary"):
 
 st.divider()
 
+st.markdown(
+    """
+### 📘 Note operative
+- **Due opzioni**: l'app crea le opzioni **Quantità** e **Posizione Stampa** (non due varianti fisse). Le varianti generate sono solo le combinazioni presenti nel foglio **Dati** e con prezzo presente a listino.
+- **Prezzi**: il prezzo viene preso dalla tabella `Posizione Stampa × Quantità`. Se una combinazione non ha prezzo, la variante viene **saltata** e segnalata.
+- **SKU variante**: viene generato come `SKUBASE-<Qta>-<pos>`, max 63 caratteri.
+- **Inventario**: impostato a 9999 per semplicità. Adatta la logica reale se necessario.
+- **Pubblicazione**: questo esempio non forza la pubblicazione su canali specifici.
+- **Deduplicazione prodotti**: la ricerca prodotto avviene per *titolo esatto*. In produzione conviene usare un `handle` o ID.
+
+### 🔑 Secrets da impostare su Streamlit Cloud
+```toml
+# .streamlit/secrets.toml
+SHOPIFY_STORE = "mystore.myshopify.com"
+SHOPIFY_API_VERSION = "2024-04"
+SHOPIFY_ADMIN_TOKEN = "shpat_..."
+```
+
+### 🧪 Struttura file prezzi (esempio)
+```
+Posizione Stampa,Quantità,Prezzo
+Fronte,1,12.90
+Fronte,2,20.00
+Retro,1,12.90
+Lato Cuore,1,10.90
+Fronte + Retro,1,18.90
+...
+```
+
+### 🚩 Limiti & miglioramenti futuri
+- Ricerca per SKU (via InventoryItem) per associare a prodotti già esistenti.
+- Gestione immagini per varianti.
+- Canali di pubblicazione / status prodotto.
+- Sincronizzazione parziale: aggiungere solo varianti mancanti invece di sostituirle.
+    """
+)
