@@ -387,39 +387,3 @@ if st.button("🔁 Crea/aggiorna prodotti su Shopify", type="primary"):
 
 st.divider()
 
-st.markdown(
-    """
-### 📘 Note operative
-- **Due opzioni**: l'app crea le opzioni **Quantità** e **Posizione Stampa** (non due varianti fisse). Le varianti generate sono solo le combinazioni presenti nel foglio **Dati** e con prezzo presente a listino.
-- **Prezzi**: il prezzo viene preso dalla tabella `Posizione Stampa × Quantità`. Se una combinazione non ha prezzo, la variante viene **saltata** e segnalata.
-- **SKU variante**: viene generato come `SKUBASE-<Qta>-<pos>`, max 63 caratteri.
-- **Inventario**: impostato a 9999 per semplicità. Adatta la logica reale se necessario.
-- **Pubblicazione**: questo esempio non forza la pubblicazione su canali specifici.
-- **Deduplicazione prodotti**: la ricerca prodotto avviene per *titolo esatto*. In produzione conviene usare un `handle` o ID.
-
-### 🔑 Secrets da impostare su Streamlit Cloud
-```toml
-# .streamlit/secrets.toml
-SHOPIFY_STORE = "mystore.myshopify.com"
-SHOPIFY_API_VERSION = "2024-04"
-SHOPIFY_ADMIN_TOKEN = "shpat_..."
-```
-
-### 🧪 Struttura file prezzi (esempio)
-```
-Posizione Stampa,Quantità,Prezzo
-Fronte,1,12.90
-Fronte,2,20.00
-Retro,1,12.90
-Lato Cuore,1,10.90
-Fronte + Retro,1,18.90
-...
-```
-
-### 🚩 Limiti & miglioramenti futuri
-- Ricerca per SKU (via InventoryItem) per associare a prodotti già esistenti.
-- Gestione immagini per varianti.
-- Canali di pubblicazione / status prodotto.
-- Sincronizzazione parziale: aggiungere solo varianti mancanti invece di sostituirle.
-    """
-)
