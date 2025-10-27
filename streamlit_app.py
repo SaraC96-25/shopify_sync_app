@@ -41,18 +41,22 @@ HEADERS = {
 # 📄 Caricamento file
 # -----------------------------
 st.subheader("Carica il file Excel unico (Prodotti + Prezzi)")
-uploaded_excel = st.file_uploader("Scegli l'Excel che contiene: foglio `Dati` e (opzionale) foglio `Prezzi`/`Listino`", type=["xlsx", "xls"]) 
+uploaded_excel = st.file_uploader(
+    "Scegli l'Excel che contiene: foglio `Dati` e (opzionale) foglio `Prezzi` o `Listino`",
+    type=["xlsx", "xls"]
+)
 
-st.markdown("**Foglio `Dati` (obbligatorio):** colonne → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità` (il `Costo Fornitore` viene ignorato).  ")
-st.markdown("**Foglio `Prezzi`/`Listino` (opzionale nello stesso file):**
-- formato **tidy**: colonne → `Posizione Stampa`, `Quantità`, `Prezzo`, **oppure**
-- formato **matrice**: prima colonna = `Posizione Stampa`, colonne successive = quantità (1,2,3,...), celle = prezzo.").
+st.markdown(
+    """
+**Foglio `Dati` (obbligatorio):**
+- colonne richieste → `Titolo Prodotto`, `SKU`, `Posizione Stampa`, `Quantità`
+- il campo `Costo Fornitore` viene ignorato
 
-**Formato atteso per il listino prezzi:** colonne → `Posizione Stampa`, `Quantità`, `Prezzo`.")
-
-ALLOWED_QT = [1,2,3,4,5,6,7,8,9,10,15,20,50,100]
-DEFAULT_POS = ["Lato Cuore","Fronte","Retro","Lato Cuore + Retro","Fronte + Retro"]
-
+**Foglio `Prezzi` o `Listino` (opzionale nello stesso file):**
+- formato **tidy** → colonne: `Posizione Stampa`, `Quantità`, `Prezzo`
+- formato **matrice** → prima colonna = `Posizione Stampa`, colonne successive = quantità (1, 2, 3, ...), celle = prezzo
+"""
+)
 # -----------------------------
 # 🧠 Funzioni dati
 # -----------------------------
