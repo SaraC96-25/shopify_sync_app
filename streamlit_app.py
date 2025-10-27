@@ -303,17 +303,4 @@ if st.button("🔁 Crea/aggiorna prodotti su Shopify", type="primary"):
 
 st.divider()
 
-st.markdown(
-    """
-### 📘 Note operative
-- **Un solo file Excel**: foglio `Dati` obbligatorio, foglio `Prezzi`/`Listino` facoltativo.
-- **Prezzi**: se manca il foglio prezzi, ma il foglio `Dati` ha la colonna `Prezzo`, verrà usata quella.
-- **SKU variante**: generato come `SKUBASE-<Qta>-<pos>`.
-- **Inventario**: impostato a 9999 per semplicità.
-- **Deduplicazione**: ricerca prodotto per titolo esatto.
 
-### 🔑 Secrets da impostare
-```toml
-SHOPIFY_STORE = "mystore.myshopify.com"
-SHOPIFY_API_VERSION = "2024-04"
-SHOPIFY_ADMIN_TOKEN = "shpat_..."
